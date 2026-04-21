@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.macro.mall.dao.CacheMessageOutboxDao">
+
+    <resultMap id="BaseResultMap" type="com.macro.mall.domain.CacheMessageOutbox">
+        <id column="id" property="id"/>
+        <result column="message_id" property="messageId"/>
+        <result column="biz_key" property="bizKey"/>
+        <result column="message_type" property="messageType"/>
+        <result column="exchange_name" property="exchangeName"/>
+        <result column="routing_key" property="routingKey"/>
+        <result column="payload" property="payload"/>
+        <result column="status" property="status"/>
+        <result column="retry_count" property="retryCount"/>
+        <result column="available_time" property="availableTime"/>
+        <result column="sent_time" property="sentTime"/>
+        <result column="last_error" property="lastError"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <sql id="BaseColumnList">
+        id, message_id, biz_key, message_type, exchange_name, routing_key, payload, status,
+        retry_count, available_time, sent_time, last_error, create_time, update_time
+    </sql>
+
+    <insert id="insert" parameterType="com.macro.mall.domain.CacheMessageOutbox" useGeneratedKeys="true" keyProperty="id">
+        insert into cache_message_outbox
+        (message_id, biz_key, message_type, exchange_name, routing_key, payload, status,
+         retry_count, available_time, sent_time, last_error, create_time, update_time)
+        values
+        (#{messageId}, #{bizKey}, #{messageType}, #{exchangeName}, #{routingKey}, #{payload}, #{status},
+         #{retryCount}, #{availableTime}, #{sentTime}, #{lastError}, #{createTime}, #{updateTime})
+    </insert>
+
+    <select id="getItem" resultMap="BaseResultMap">
+        select <include refid="BaseColumnList"/>
+        from cache_message_outbox
+        where id = #{id}
+    </select>
+
+    <select id="listDispatchable" resultMap="BaseResultMap">
+        select <include refid="BaseColumnList"/>
+        from cache_message_outbox
+        where (
+            (
+                status in
+                <foreach collection="statusList" item="status" open="(" separator="," close=")">
+                    #{status}
+                </foreach>
+                and available_time &lt;= #{now}
+            )
+            or
+            (
+                status = 1
+                and update_time &lt;= #{processingExpireTime}
+            )
+        )
+        order by id asc
+        limit #{limit}
+    </select>
+
+    <update id="markProcessing">
+        update cache_message_outbox
+        set status = 1,
+            update_time = #{updateTime}
+        where id = #{id}
+          and status in
+        <foreach collection="statusList" item="status" open="(" separator="," close=")">
+            #{status}
+        </foreach>
+    </update>
+
+    <update id="markSent">
+        update cache_message_outbox
+        set status = 2,
+            sent_time = #{sentTime},
+            update_time = #{updateTime},
+            last_error = null
+        where id = #{id}
+    </update>
+
+    <update id="markFailed">
+        update cache_message_outbox
+        set status = 3,
+            retry_count = #{retryCount},
+            available_time = #{availableTime},
+            last_error = #{lastError},
+            update_time = #{updateTime}
+        where id = #{id}
+    </update>
+
+    <delete id="deleteSentBefore">
+        delete from cache_message_outbox
+        where status = 2
+          and sent_time is not null
+          and sent_time &lt; #{beforeTime}
+        limit #{limit}
+    </delete>
+
+</mapper>

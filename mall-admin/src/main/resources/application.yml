@@ -1,0 +1,78 @@
+spring:
+  application:
+    name: mall-admin
+  profiles:
+    active: dev
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 10MB
+  mvc:
+    pathmatch:
+      matching-strategy: ant_path_matcher
+
+mybatis:
+  mapper-locations:
+    - classpath:dao/*.xml
+    - classpath*:com/**/mapper/*.xml
+
+jwt:
+  tokenHeader: Authorization
+  secret: mall-admin-secret
+  expiration: 604800
+  tokenHead: 'Bearer '
+
+redis:
+  database: mall
+  key:
+    admin: 'ums:admin'
+    resourceList: 'ums:resourceList'
+  expire:
+    common: 86400
+
+secure:
+  ignored:
+    urls:
+      - /swagger-ui/
+      - /swagger-resources/**
+      - /**/v2/api-docs
+      - /**/*.html
+      - /**/*.js
+      - /**/*.css
+      - /**/*.png
+      - /**/*.map
+      - /favicon.ico
+      - /actuator/**
+      - /druid/**
+      - /admin/login
+      - /admin/register
+      - /admin/info
+      - /admin/logout
+      - /minio/upload
+
+aliyun:
+  oss:
+    endpoint: oss-cn-shenzhen.aliyuncs.com
+    accessKeyId: test
+    accessKeySecret: test
+    bucketName: macro-oss
+    policy:
+      expire: 300
+    maxSize: 10
+    callback: http://39.98.190.128:8080/aliyun/oss/callback
+    dir:
+      prefix: mall/images/
+
+mall:
+  cache:
+    product:
+      detail:
+        delayed-double-delete-millis: 500
+        outbox-dispatch-batch-size: 100
+        outbox-dispatch-interval-millis: 5000
+        outbox-processing-timeout-seconds: 60
+        outbox-retry-base-seconds: 5
+        outbox-retry-max-seconds: 300
+        outbox-retention-days: 7
+        outbox-cleanup-cron: "0 0 3 * * ?"
+        mq-confirm-timeout-millis: 5000

@@ -1,0 +1,20 @@
+CREATE TABLE IF NOT EXISTS `cache_message_outbox` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT 'primary key',
+  `message_id` VARCHAR(64) NOT NULL COMMENT 'unique message id',
+  `biz_key` VARCHAR(128) NOT NULL COMMENT 'business key',
+  `message_type` VARCHAR(64) NOT NULL COMMENT 'message type',
+  `exchange_name` VARCHAR(128) NOT NULL COMMENT 'exchange name',
+  `routing_key` VARCHAR(128) NOT NULL DEFAULT '' COMMENT 'routing key',
+  `payload` TEXT NOT NULL COMMENT 'message payload',
+  `status` INT NOT NULL COMMENT '0-PENDING,1-PROCESSING,2-SENT,3-FAILED',
+  `retry_count` INT NOT NULL DEFAULT 0 COMMENT 'retry count',
+  `available_time` DATETIME NOT NULL COMMENT 'available dispatch time',
+  `sent_time` DATETIME DEFAULT NULL COMMENT 'sent time',
+  `last_error` VARCHAR(1000) DEFAULT NULL COMMENT 'last error message',
+  `create_time` DATETIME NOT NULL COMMENT 'create time',
+  `update_time` DATETIME NOT NULL COMMENT 'update time',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_message_id` (`message_id`),
+  KEY `idx_status_available_time` (`status`, `available_time`),
+  KEY `idx_biz_key` (`biz_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='cache invalidation outbox';
