@@ -1,0 +1,22 @@
+CREATE TABLE `sec_kill_message_outbox` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `message_id` varchar(64) NOT NULL COMMENT 'MQ消息ID',
+  `request_id` varchar(64) NOT NULL COMMENT '秒杀请求ID',
+  `member_id` bigint NOT NULL COMMENT '会员ID',
+  `member_username` varchar(64) DEFAULT NULL COMMENT '会员用户名',
+  `member_receive_address_id` bigint NOT NULL COMMENT '收货地址ID',
+  `flash_promotion_product_relation_id` bigint NOT NULL COMMENT '秒杀商品活动关系ID',
+  `product_id` bigint NOT NULL COMMENT '商品ID',
+  `quantity` int NOT NULL DEFAULT '1' COMMENT '购买数量',
+  `status` varchar(20) NOT NULL COMMENT '状态：INIT/RESERVED/PROCESSING/SENT/FAILED/CANCELED',
+  `retry_count` int NOT NULL DEFAULT '0' COMMENT '重试次数',
+  `next_retry_time` datetime DEFAULT NULL COMMENT '下次重试时间',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `last_error` varchar(512) DEFAULT NULL COMMENT '最后一次错误信息',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_message_id` (`message_id`),
+  UNIQUE KEY `uk_request_id` (`request_id`),
+  KEY `idx_status_next_retry_time` (`status`, `next_retry_time`),
+  KEY `idx_update_time` (`update_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='秒杀MQ本地消息表';

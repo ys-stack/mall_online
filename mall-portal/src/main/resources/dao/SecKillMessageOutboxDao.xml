@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.macro.mall.portal.dao.SecKillMessageOutboxDao">
+    <resultMap id="BaseResultMap" type="com.macro.mall.portal.domain.SecKillMessageOutbox">
+        <id column="id" property="id"/>
+        <result column="message_id" property="messageId"/>
+        <result column="request_id" property="requestId"/>
+        <result column="member_id" property="memberId"/>
+        <result column="member_username" property="memberUsername"/>
+        <result column="member_receive_address_id" property="memberReceiveAddressId"/>
+        <result column="flash_promotion_product_relation_id" property="flashPromotionProductRelationId"/>
+        <result column="product_id" property="productId"/>
+        <result column="quantity" property="quantity"/>
+        <result column="status" property="status"/>
+        <result column="retry_count" property="retryCount"/>
+        <result column="next_retry_time" property="nextRetryTime"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+        <result column="last_error" property="lastError"/>
+    </resultMap>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO sec_kill_message_outbox
+        (message_id, request_id, member_id, member_username, member_receive_address_id,
+         flash_promotion_product_relation_id, product_id, quantity, status, retry_count,
+         next_retry_time, create_time, update_time, last_error)
+        VALUES
+        (#{messageId}, #{requestId}, #{memberId}, #{memberUsername}, #{memberReceiveAddressId},
+         #{flashPromotionProductRelationId}, #{productId}, #{quantity}, #{status}, #{retryCount},
+         #{nextRetryTime}, NOW(), NOW(), #{lastError})
+    </insert>
+
+    <update id="markReserved">
+        UPDATE sec_kill_message_outbox
+        SET status = 'RESERVED',
+            update_time = NOW(),
+            last_error = NULL
+        WHERE message_id = #{messageId}
+          AND status IN ('INIT', 'FAILED', 'PROCESSING')
+    </update>
+
+    <update id="markProcessing">
+        UPDATE sec_kill_message_outbox
+        SET status = 'PROCESSING',
+            update_time = NOW()
+        WHERE message_id = #{messageId}
+          AND status IN ('INIT', 'RESERVED', 'FAILED', 'PROCESSING')
+    </update>
+
+    <update id="markSent">
+        UPDATE sec_kill_message_outbox
+        SET status = 'SENT',
+            update_time = NOW(),
+            last_error = NULL
+        WHERE message_id = #{messageId}
+    </update>
+
+    <update id="markFailed">
+        UPDATE sec_kill_message_outbox
+        SET status = 'FAILED',
+            retry_count = retry_count + 1,
+            next_retry_time = #{nextRetryTime},
+            update_time = NOW(),
+            last_error = #{lastError}
+        WHERE message_id = #{messageId}
+    </update>
+
+    <update id="markCanceled">
+        UPDATE sec_kill_message_outbox
+        SET status = 'CANCELED',
+            update_time = NOW(),
+            last_error = #{lastError}
+        WHERE message_id = #{messageId}
+          AND status != 'SENT'
+    </update>
+
+    <select id="listDispatchable" resultMap="BaseResultMap">
+        SELECT
+            id, message_id, request_id, member_id, member_username, member_receive_address_id,
+            flash_promotion_product_relation_id, product_id, quantity, status, retry_count,
+            next_retry_time, create_time, update_time, last_error
+        FROM sec_kill_message_outbox
+        WHERE
+            (
+                status IN ('INIT', 'RESERVED', 'FAILED')
+                AND (next_retry_time IS NULL OR next_retry_time &lt;= NOW())
+            )
+            OR
+            (
+                status = 'PROCESSING'
+                AND update_time &lt; DATE_SUB(NOW(), INTERVAL #{processingTimeoutSeconds} SECOND)
+            )
+        ORDER BY create_time ASC
+        LIMIT #{limit}
+    </select>
+</mapper>
