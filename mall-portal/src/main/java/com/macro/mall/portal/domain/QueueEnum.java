@@ -15,7 +15,19 @@ public enum QueueEnum {
     /**
      * 消息通知ttl队列
      */
-    QUEUE_TTL_ORDER_CANCEL("mall.order.direct.ttl", "mall.order.cancel.ttl", "mall.order.cancel.ttl");
+    QUEUE_TTL_ORDER_CANCEL("mall.order.direct.ttl", "mall.order.cancel.ttl", "mall.order.cancel.ttl"),
+    /**
+     * 秒杀建单队列
+     */
+    QUEUE_SECKILL_ORDER_CREATE("mall.seckill.order.direct", "mall.seckill.order.create", "mall.seckill.order.create"),
+    /**
+     * 秒杀建单重试队列
+     */
+    QUEUE_SECKILL_ORDER_RETRY("mall.seckill.order.retry.direct", "mall.seckill.order.retry", "mall.seckill.order.retry"),
+    /**
+     * 秒杀建单死信队列
+     */
+    QUEUE_SECKILL_ORDER_DEAD_LETTER("mall.seckill.order.dlx", "mall.seckill.order.dead", "mall.seckill.order.dead");
 
     /**
      * 交换名称

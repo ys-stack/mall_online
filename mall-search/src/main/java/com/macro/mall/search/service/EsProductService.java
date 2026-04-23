@@ -2,6 +2,7 @@ package com.macro.mall.search.service;
 
 import com.macro.mall.search.domain.EsProduct;
 import com.macro.mall.search.domain.EsProductRelatedInfo;
+import com.macro.mall.search.domain.EsProductSearchParam;
 import org.springframework.data.domain.Page;
 
 import java.util.List;
@@ -42,9 +43,19 @@ public interface EsProductService {
     Page<EsProduct> search(String keyword, Long brandId, Long productCategoryId, Integer pageNum, Integer pageSize,Integer sort);
 
     /**
+     * 根据高级搜索参数进行组合检索，支持关键词、品牌、分类、价格、库存和促销过滤。
+     */
+    Page<EsProduct> advancedSearch(EsProductSearchParam param, Integer pageNum, Integer pageSize);
+
+    /**
      * 根据商品id推荐相关商品
      */
     Page<EsProduct> recommend(Long id, Integer pageNum, Integer pageSize);
+
+    /**
+     * 根据商品id进行增强推荐，使用同类目、同品牌、文本相似、价格带、销量等多因子加权。
+     */
+    Page<EsProduct> recommendAdvanced(Long id, Integer pageNum, Integer pageSize);
 
     /**
      * 搜索关键字相关品牌、分类、属性

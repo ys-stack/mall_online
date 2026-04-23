@@ -79,3 +79,15 @@ mall:
           queue-type: quorum
           consumer-concurrency: 1
           max-consumer-concurrency: 4
+  seckill:
+    stock-ttl-seconds: 7200
+    user-hold-ttl-seconds: 1800
+    processing-ttl-seconds: 600
+    order-result-ttl-seconds: 86400
+    outbox:
+      fixed-delay-millis: 5000
+      scan-limit: 100
+      processing-timeout-seconds: 60
+    mq:
+      max-retry-times: 3
+      retry-delay-millis: 5000

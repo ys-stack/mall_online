@@ -32,6 +32,10 @@ spring:
     virtual-host: /mall
     username: mall
     password: mall
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
 
 logging:
   level:
@@ -49,4 +53,3 @@ alipay:
   appPrivateKey: your appPrivateKey
   returnUrl: http://localhost:8060/#/pages/money/paySuccess
   notifyUrl:
-

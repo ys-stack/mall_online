@@ -5,6 +5,7 @@ import cn.hutool.core.util.StrUtil;
 import com.macro.mall.search.dao.EsProductDao;
 import com.macro.mall.search.domain.EsProduct;
 import com.macro.mall.search.domain.EsProductRelatedInfo;
+import com.macro.mall.search.domain.EsProductSearchParam;
 import com.macro.mall.search.repository.EsProductRepository;
 import com.macro.mall.search.service.EsProductService;
 import org.elasticsearch.common.lucene.search.function.FunctionScoreQuery;
@@ -38,6 +39,7 @@ import org.springframework.data.elasticsearch.core.query.NativeSearchQueryBuilde
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -169,6 +171,28 @@ public class EsProductServiceImpl implements EsProductService {
         return new PageImpl<>(searchProductList,pageable,searchHits.getTotalHits());
     }
 
+    /**
+     * 高级搜索：在关键词相关度基础上叠加品牌、分类、价格、库存和促销过滤。
+     */
+    @Override
+    public Page<EsProduct> advancedSearch(EsProductSearchParam param, Integer pageNum, Integer pageSize) {
+        if (param == null) {
+            param = new EsProductSearchParam();
+        }
+        Pageable pageable = PageRequest.of(pageNum, pageSize);
+        NativeSearchQueryBuilder builder = new NativeSearchQueryBuilder();
+        builder.withPageable(pageable);
+        builder.withQuery(buildKeywordScoreQuery(param.getKeyword()));
+        BoolQueryBuilder filterBuilder = buildAdvancedFilter(param);
+        if (filterBuilder.hasClauses()) {
+            builder.withFilter(filterBuilder);
+        }
+        applyProductSort(builder, param.getSort());
+        NativeSearchQuery searchQuery = builder.build();
+        LOGGER.info("Advanced DSL:{}", searchQuery.getQuery().toString());
+        return searchByQuery(searchQuery, pageable);
+    }
+
     @Override
     public Page<EsProduct> recommend(Long id, Integer pageNum, Integer pageSize) {
         Pageable pageable = PageRequest.of(pageNum, pageSize);
@@ -215,6 +239,31 @@ public class EsProductServiceImpl implements EsProductService {
         return new PageImpl<>(ListUtil.empty());
     }
 
+    /**
+     * 增强推荐：先根据当前商品召回同类目、同品牌、文本相似和价格相近商品，再按销量、新品、推荐状态加权粗排。
+     */
+    @Override
+    public Page<EsProduct> recommendAdvanced(Long id, Integer pageNum, Integer pageSize) {
+        Pageable pageable = PageRequest.of(pageNum, pageSize);
+        List<EsProduct> esProductList = productDao.getAllEsProductList(id);
+        if (CollectionUtils.isEmpty(esProductList)) {
+            return new PageImpl<>(ListUtil.empty(), pageable, 0);
+        }
+        EsProduct seedProduct = esProductList.get(0);
+        NativeSearchQueryBuilder builder = new NativeSearchQueryBuilder();
+        builder.withPageable(pageable);
+        builder.withQuery(buildRecommendScoreQuery(seedProduct));
+        BoolQueryBuilder filterBuilder = QueryBuilders.boolQuery();
+        filterBuilder.mustNot(QueryBuilders.termQuery("id", id));
+        filterBuilder.filter(QueryBuilders.rangeQuery("stock").gt(0));
+        builder.withFilter(filterBuilder);
+        builder.withSorts(SortBuilders.scoreSort().order(SortOrder.DESC));
+        builder.withSorts(SortBuilders.fieldSort("sale").order(SortOrder.DESC));
+        NativeSearchQuery searchQuery = builder.build();
+        LOGGER.info("Recommend advanced DSL:{}", searchQuery.getQuery().toString());
+        return searchByQuery(searchQuery, pageable);
+    }
+
     @Override
     public EsProductRelatedInfo searchRelatedInfo(String keyword) {
         NativeSearchQueryBuilder builder = new NativeSearchQueryBuilder();
@@ -241,6 +290,177 @@ public class EsProductServiceImpl implements EsProductService {
         NativeSearchQuery searchQuery = builder.build();
         SearchHits<EsProduct> searchHits = elasticsearchRestTemplate.search(searchQuery, EsProduct.class);
         return convertProductRelatedInfo(searchHits);
+    }
+
+    /**
+     * 构建关键词相关度评分查询，商品名称权重最高，副标题次之，搜索关键词兜底。
+     */
+    private FunctionScoreQueryBuilder buildKeywordScoreQuery(String keyword) {
+        if (StrUtil.isEmpty(keyword)) {
+            return QueryBuilders.functionScoreQuery(QueryBuilders.matchAllQuery(),
+                    new FunctionScoreQueryBuilder.FilterFunctionBuilder[]{
+                            new FunctionScoreQueryBuilder.FilterFunctionBuilder(QueryBuilders.termQuery("recommandStatus", 1),
+                                    ScoreFunctionBuilders.weightFactorFunction(1.2f)),
+                            new FunctionScoreQueryBuilder.FilterFunctionBuilder(QueryBuilders.termQuery("newStatus", 1),
+                                    ScoreFunctionBuilders.weightFactorFunction(1.1f))
+                    }).scoreMode(FunctionScoreQuery.ScoreMode.SUM);
+        }
+        List<FunctionScoreQueryBuilder.FilterFunctionBuilder> filterFunctionBuilders = new ArrayList<>();
+        filterFunctionBuilders.add(new FunctionScoreQueryBuilder.FilterFunctionBuilder(QueryBuilders.matchQuery("name", keyword),
+                ScoreFunctionBuilders.weightFactorFunction(10)));
+        filterFunctionBuilders.add(new FunctionScoreQueryBuilder.FilterFunctionBuilder(QueryBuilders.matchQuery("subTitle", keyword),
+                ScoreFunctionBuilders.weightFactorFunction(5)));
+        filterFunctionBuilders.add(new FunctionScoreQueryBuilder.FilterFunctionBuilder(QueryBuilders.matchQuery("keywords", keyword),
+                ScoreFunctionBuilders.weightFactorFunction(3)));
+        filterFunctionBuilders.add(new FunctionScoreQueryBuilder.FilterFunctionBuilder(QueryBuilders.termQuery("recommandStatus", 1),
+                ScoreFunctionBuilders.weightFactorFunction(1.5f)));
+        FunctionScoreQueryBuilder.FilterFunctionBuilder[] builders = new FunctionScoreQueryBuilder.FilterFunctionBuilder[filterFunctionBuilders.size()];
+        filterFunctionBuilders.toArray(builders);
+        return QueryBuilders.functionScoreQuery(builders)
+                .scoreMode(FunctionScoreQuery.ScoreMode.SUM)
+                .setMinScore(2);
+    }
+
+    /**
+     * 构建高级搜索过滤条件，过滤条件不参与文本打分，能提升查询稳定性。
+     */
+    private BoolQueryBuilder buildAdvancedFilter(EsProductSearchParam param) {
+        BoolQueryBuilder filterBuilder = QueryBuilders.boolQuery();
+        if (param.getBrandId() != null) {
+            filterBuilder.filter(QueryBuilders.termQuery("brandId", param.getBrandId()));
+        }
+        if (param.getProductCategoryId() != null) {
+            filterBuilder.filter(QueryBuilders.termQuery("productCategoryId", param.getProductCategoryId()));
+        }
+        if (param.getMinPrice() != null || param.getMaxPrice() != null) {
+            org.elasticsearch.index.query.RangeQueryBuilder rangeQueryBuilder = QueryBuilders.rangeQuery("price");
+            if (param.getMinPrice() != null) {
+                rangeQueryBuilder.gte(param.getMinPrice());
+            }
+            if (param.getMaxPrice() != null) {
+                rangeQueryBuilder.lte(param.getMaxPrice());
+            }
+            filterBuilder.filter(rangeQueryBuilder);
+        }
+        if (Boolean.TRUE.equals(param.getOnlyStock())) {
+            filterBuilder.filter(QueryBuilders.rangeQuery("stock").gt(0));
+        }
+        if (param.getPromotionType() != null) {
+            filterBuilder.filter(QueryBuilders.termQuery("promotionType", param.getPromotionType()));
+        }
+        return filterBuilder;
+    }
+
+    /**
+     * 构建推荐评分查询，模拟“召回 + 多因子粗排”的推荐策略。
+     */
+    private FunctionScoreQueryBuilder buildRecommendScoreQuery(EsProduct seedProduct) {
+        List<FunctionScoreQueryBuilder.FilterFunctionBuilder> filterFunctionBuilders = new ArrayList<>();
+        if (seedProduct.getProductCategoryId() != null) {
+            filterFunctionBuilders.add(new FunctionScoreQueryBuilder.FilterFunctionBuilder(QueryBuilders.termQuery("productCategoryId", seedProduct.getProductCategoryId()),
+                    ScoreFunctionBuilders.weightFactorFunction(12)));
+        }
+        if (seedProduct.getBrandId() != null) {
+            filterFunctionBuilders.add(new FunctionScoreQueryBuilder.FilterFunctionBuilder(QueryBuilders.termQuery("brandId", seedProduct.getBrandId()),
+                    ScoreFunctionBuilders.weightFactorFunction(5)));
+        }
+        if (StrUtil.isNotEmpty(seedProduct.getName())) {
+            filterFunctionBuilders.add(new FunctionScoreQueryBuilder.FilterFunctionBuilder(QueryBuilders.matchQuery("name", seedProduct.getName()),
+                    ScoreFunctionBuilders.weightFactorFunction(8)));
+            filterFunctionBuilders.add(new FunctionScoreQueryBuilder.FilterFunctionBuilder(QueryBuilders.matchQuery("subTitle", seedProduct.getName()),
+                    ScoreFunctionBuilders.weightFactorFunction(3)));
+        }
+        if (StrUtil.isNotEmpty(seedProduct.getKeywords())) {
+            filterFunctionBuilders.add(new FunctionScoreQueryBuilder.FilterFunctionBuilder(QueryBuilders.matchQuery("keywords", seedProduct.getKeywords()),
+                    ScoreFunctionBuilders.weightFactorFunction(4)));
+        }
+        addPriceBandFunction(filterFunctionBuilders, seedProduct.getPrice());
+        filterFunctionBuilders.add(new FunctionScoreQueryBuilder.FilterFunctionBuilder(QueryBuilders.termQuery("recommandStatus", 1),
+                ScoreFunctionBuilders.weightFactorFunction(2)));
+        filterFunctionBuilders.add(new FunctionScoreQueryBuilder.FilterFunctionBuilder(QueryBuilders.termQuery("newStatus", 1),
+                ScoreFunctionBuilders.weightFactorFunction(1)));
+        filterFunctionBuilders.add(new FunctionScoreQueryBuilder.FilterFunctionBuilder(QueryBuilders.rangeQuery("sale").gte(1000),
+                ScoreFunctionBuilders.weightFactorFunction(4)));
+        filterFunctionBuilders.add(new FunctionScoreQueryBuilder.FilterFunctionBuilder(QueryBuilders.rangeQuery("sale").gte(100),
+                ScoreFunctionBuilders.weightFactorFunction(2)));
+        FunctionScoreQueryBuilder.FilterFunctionBuilder[] builders = new FunctionScoreQueryBuilder.FilterFunctionBuilder[filterFunctionBuilders.size()];
+        filterFunctionBuilders.toArray(builders);
+        return QueryBuilders.functionScoreQuery(buildRecommendCandidateQuery(seedProduct), builders)
+                .scoreMode(FunctionScoreQuery.ScoreMode.SUM)
+                .setMinScore(2);
+    }
+
+    /**
+     * 构建推荐候选集召回条件，先圈定相关商品，再进入多因子排序，避免全量商品被弱特征误召回。
+     */
+    private BoolQueryBuilder buildRecommendCandidateQuery(EsProduct seedProduct) {
+        BoolQueryBuilder candidateQuery = QueryBuilders.boolQuery();
+        if (seedProduct.getProductCategoryId() != null) {
+            candidateQuery.should(QueryBuilders.termQuery("productCategoryId", seedProduct.getProductCategoryId()));
+        }
+        if (seedProduct.getBrandId() != null) {
+            candidateQuery.should(QueryBuilders.termQuery("brandId", seedProduct.getBrandId()));
+        }
+        if (StrUtil.isNotEmpty(seedProduct.getName())) {
+            candidateQuery.should(QueryBuilders.matchQuery("name", seedProduct.getName()));
+            candidateQuery.should(QueryBuilders.matchQuery("subTitle", seedProduct.getName()));
+        }
+        if (StrUtil.isNotEmpty(seedProduct.getKeywords())) {
+            candidateQuery.should(QueryBuilders.matchQuery("keywords", seedProduct.getKeywords()));
+        }
+        if (seedProduct.getPrice() != null && seedProduct.getPrice().compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal minPrice = seedProduct.getPrice().multiply(new BigDecimal("0.8"));
+            BigDecimal maxPrice = seedProduct.getPrice().multiply(new BigDecimal("1.2"));
+            candidateQuery.should(QueryBuilders.rangeQuery("price").gte(minPrice).lte(maxPrice));
+        }
+        if (!candidateQuery.hasClauses()) {
+            candidateQuery.must(QueryBuilders.matchAllQuery());
+        } else {
+            candidateQuery.minimumShouldMatch(1);
+        }
+        return candidateQuery;
+    }
+
+    /**
+     * 添加价格带相似度因子，避免推荐结果价格跨度过大影响转化。
+     */
+    private void addPriceBandFunction(List<FunctionScoreQueryBuilder.FilterFunctionBuilder> filterFunctionBuilders, BigDecimal price) {
+        if (price == null || price.compareTo(BigDecimal.ZERO) <= 0) {
+            return;
+        }
+        BigDecimal minPrice = price.multiply(new BigDecimal("0.8"));
+        BigDecimal maxPrice = price.multiply(new BigDecimal("1.2"));
+        filterFunctionBuilders.add(new FunctionScoreQueryBuilder.FilterFunctionBuilder(
+                QueryBuilders.rangeQuery("price").gte(minPrice).lte(maxPrice),
+                ScoreFunctionBuilders.weightFactorFunction(3)));
+    }
+
+    /**
+     * 应用商品搜索排序规则，默认按相关度排序。
+     */
+    private void applyProductSort(NativeSearchQueryBuilder builder, Integer sort) {
+        if (sort != null && sort == 1) {
+            builder.withSorts(SortBuilders.fieldSort("id").order(SortOrder.DESC));
+        } else if (sort != null && sort == 2) {
+            builder.withSorts(SortBuilders.fieldSort("sale").order(SortOrder.DESC));
+        } else if (sort != null && sort == 3) {
+            builder.withSorts(SortBuilders.fieldSort("price").order(SortOrder.ASC));
+        } else if (sort != null && sort == 4) {
+            builder.withSorts(SortBuilders.fieldSort("price").order(SortOrder.DESC));
+        }
+        builder.withSorts(SortBuilders.scoreSort().order(SortOrder.DESC));
+    }
+
+    /**
+     * 执行 ES 查询并统一转换分页结果。
+     */
+    private Page<EsProduct> searchByQuery(NativeSearchQuery searchQuery, Pageable pageable) {
+        SearchHits<EsProduct> searchHits = elasticsearchRestTemplate.search(searchQuery, EsProduct.class);
+        if (searchHits.getTotalHits() <= 0) {
+            return new PageImpl<>(ListUtil.empty(), pageable, 0);
+        }
+        List<EsProduct> searchProductList = searchHits.stream().map(SearchHit::getContent).collect(Collectors.toList());
+        return new PageImpl<>(searchProductList, pageable, searchHits.getTotalHits());
     }
 
     /**

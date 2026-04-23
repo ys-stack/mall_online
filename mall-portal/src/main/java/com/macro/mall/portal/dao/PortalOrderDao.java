@@ -51,4 +51,14 @@ public interface PortalOrderDao {
      * 根据商品的skuId释放库存
      */
     int releaseStockBySkuId(@Param("productSkuId")Long productSkuId,@Param("quantity") Integer quantity);
+
+    /**
+     * 扣减秒杀活动库存，依赖数据库条件更新防止最终落库超卖。
+     */
+    int decreaseFlashPromotionStock(@Param("relationId") Long relationId, @Param("quantity") Integer quantity);
+
+    /**
+     * 扣减商品总库存，作为秒杀落库时的最终库存兜底。
+     */
+    int decreaseProductStock(@Param("productId") Long productId, @Param("quantity") Integer quantity);
 }

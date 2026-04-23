@@ -4,6 +4,7 @@ import com.macro.mall.common.api.CommonPage;
 import com.macro.mall.common.api.CommonResult;
 import com.macro.mall.search.domain.EsProduct;
 import com.macro.mall.search.domain.EsProductRelatedInfo;
+import com.macro.mall.search.domain.EsProductSearchParam;
 import com.macro.mall.search.service.EsProductService;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiImplicitParam;
@@ -89,6 +90,19 @@ public class EsProductController {
         return CommonResult.success(CommonPage.restPage(esProductPage));
     }
 
+    /**
+     * 高级搜索商品，支持价格区间、库存过滤和促销过滤。
+     */
+    @ApiOperation(value = "高级搜索、筛选、排序")
+    @RequestMapping(value = "/search/advanced", method = RequestMethod.POST)
+    @ResponseBody
+    public CommonResult<CommonPage<EsProduct>> advancedSearch(@RequestBody EsProductSearchParam param,
+                                                              @RequestParam(required = false, defaultValue = "0") Integer pageNum,
+                                                              @RequestParam(required = false, defaultValue = "5") Integer pageSize) {
+        Page<EsProduct> esProductPage = esProductService.advancedSearch(param, pageNum, pageSize);
+        return CommonResult.success(CommonPage.restPage(esProductPage));
+    }
+
     @ApiOperation(value = "根据商品id推荐商品")
     @RequestMapping(value = "/recommend/{id}", method = RequestMethod.GET)
     @ResponseBody
@@ -96,6 +110,19 @@ public class EsProductController {
                                                          @RequestParam(required = false, defaultValue = "0") Integer pageNum,
                                                          @RequestParam(required = false, defaultValue = "5") Integer pageSize) {
         Page<EsProduct> esProductPage = esProductService.recommend(id, pageNum, pageSize);
+        return CommonResult.success(CommonPage.restPage(esProductPage));
+    }
+
+    /**
+     * 增强推荐商品，使用多因子 function_score 进行推荐排序。
+     */
+    @ApiOperation(value = "根据商品id增强推荐商品")
+    @RequestMapping(value = "/recommend/advanced/{id}", method = RequestMethod.GET)
+    @ResponseBody
+    public CommonResult<CommonPage<EsProduct>> recommendAdvanced(@PathVariable Long id,
+                                                                 @RequestParam(required = false, defaultValue = "0") Integer pageNum,
+                                                                 @RequestParam(required = false, defaultValue = "5") Integer pageSize) {
+        Page<EsProduct> esProductPage = esProductService.recommendAdvanced(id, pageNum, pageSize);
         return CommonResult.success(CommonPage.restPage(esProductPage));
     }
 

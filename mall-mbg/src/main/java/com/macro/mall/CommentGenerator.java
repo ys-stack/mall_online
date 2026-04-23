@@ -37,7 +37,7 @@ public class CommentGenerator extends DefaultCommentGenerator {
                                 IntrospectedColumn introspectedColumn) {
         String remarks = introspectedColumn.getRemarks();
         //根据参数和备注信息判断是否添加swagger注解信息
-        if(addRemarkComments&&StringUtility.stringHasValue(remarks)){
+        if(addRemarkComments && StringUtility.stringHasValue(remarks)){
 //            addFieldJavaDoc(field, remarks);
             //数据库中特殊字符需要转义
             if(remarks.contains("\"")){

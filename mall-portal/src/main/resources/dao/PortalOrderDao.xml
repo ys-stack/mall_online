@@ -111,4 +111,16 @@
             id = #{productSkuId}
           AND lock_stock - #{quantity} &gt;= 0
     </update>
+    <update id="decreaseFlashPromotionStock">
+        UPDATE sms_flash_promotion_product_relation
+        SET flash_promotion_count = flash_promotion_count - #{quantity}
+        WHERE id = #{relationId}
+          AND flash_promotion_count - #{quantity} &gt;= 0
+    </update>
+    <update id="decreaseProductStock">
+        UPDATE pms_product
+        SET stock = stock - #{quantity}
+        WHERE id = #{productId}
+          AND stock - #{quantity} &gt;= 0
+    </update>
 </mapper>

@@ -35,6 +35,10 @@ spring:
     virtual-host: /mall
     username: mall
     password: mall
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
 
 mongo:
   insert:
@@ -57,4 +61,3 @@ alipay:
   appPrivateKey: your appPrivateKey
   returnUrl: http://192.168.3.101:8060/#/pages/money/paySuccess
   notifyUrl:
-
